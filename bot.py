@@ -75,26 +75,33 @@ async def on_channel_message(event):
     if not is_tracked:
         return
 
+    log.info("📩 Сообщение из отслеживаемого канала: %s (id=%s)", chat_username, chat_id)
+
     text = (event.raw_text or "").lower()
     if not text:
         return
 
     matched = [kw for kw in keywords if kw.lower() in text]
     if not matched:
+        log.info("  Нет совпадений по ключевым словам.")
         return
 
     # Формируем уведомление
     channel_name = chat.title if hasattr(chat, "title") else str(chat_id)
+    link = f"https://t.me/{chat_username}/{event.id}" if chat_username else ""
     header = (
         f"🔔 **Найдено совпадение!**\n"
         f"📢 Канал: **{channel_name}**\n"
         f"🔑 Слова: {', '.join(matched)}\n"
-        f"{'─' * 30}"
     )
+    if link:
+        header += f"🔗 [Открыть сообщение]({link})\n"
+    header += f"{'─' * 30}"
 
     try:
-        await bot.send_message(MY_USER_ID, header)
-        await event.forward_to(MY_USER_ID)  # пересылаем оригинал через userbot
+        await bot.send_message(MY_USER_ID, header, link_preview=False)
+        # Пересылаем оригинал через userbot
+        await user.forward_messages(MY_USER_ID, event.id, chat_id)
         log.info("Переслано из %s, слова: %s", channel_name, matched)
     except Exception as e:
         log.error("Ошибка отправки: %s", e)
