@@ -88,7 +88,14 @@ async def on_channel_message(event):
 
     # Формируем уведомление
     channel_name = chat.title if hasattr(chat, "title") else str(chat_id)
-    link = f"https://t.me/{chat_username}/{event.id}" if chat_username else ""
+    is_bot_chat = getattr(chat, "bot", False)
+    if chat_username and not is_bot_chat:
+        link = f"https://t.me/{chat_username}/{event.id}"
+    elif not is_bot_chat:
+        # Приватный канал/группа без username
+        link = f"https://t.me/c/{abs(chat_id)}/{event.id}"
+    else:
+        link = ""
     header = (
         f"🔔 **Найдено совпадение!**\n"
         f"📢 Канал: **{channel_name}**\n"
