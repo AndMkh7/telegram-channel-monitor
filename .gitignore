@@ -2,3 +2,5 @@
 *.session
 *.session-journal
 __pycache__/
+data.db
+bot.log
