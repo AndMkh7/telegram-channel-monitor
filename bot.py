@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.tl.functions.bots import SetBotCommandsRequest
-from telethon.tl.types import BotCommand, BotCommandScopeDefault
+from telethon.tl.types import BotCommand, BotCommandScopeDefault, BotCommandScopePeer, InputPeerUser
 from telethon.errors import FloodWaitError
 
 import db
@@ -229,11 +229,43 @@ async def on_channel_message(event):
         header += f"{'─' * 30}"
 
         try:
-            await bot.send_message(uid, header, link_preview=False)
-            await user.forward_messages(uid, event.id, chat_id)
+            # Send header + original message text via bot (not userbot)
+            preview = (event.raw_text or "")[:500]
+            if len(event.raw_text or "") > 500:
+                preview += "..."
+            full_msg = header + "\n\n" + preview
+            await bot.send_message(uid, full_msg, link_preview=False)
             log.info("Отправлено пользователю %s, слова: %s", uid, matched)
         except Exception as e:
             log.error("Ошибка отправки пользователю %s: %s", uid, e)
+
+
+# ── Allowed commands per role ─────────────────────────────────
+
+PUBLIC_COMMANDS = {
+    "/start", "/help", "/keywords", "/add_keyword", "/remove_keyword",
+    "/suggest_channel", "/status", "/more",
+}
+ADMIN_COMMANDS = {
+    "/channels", "/add_channel", "/remove_channel",
+    "/approve", "/reject", "/users", "/suggestions",
+}
+
+
+@bot.on(events.NewMessage(pattern=r"^/"))
+async def command_guard(event):
+    """Block any command not in the user's allowed set."""
+    text = (event.raw_text or "").strip()
+    cmd = text.split()[0].split("@")[0].lower()  # handle /cmd@botname
+
+    if event.sender_id == ADMIN_ID:
+        allowed = PUBLIC_COMMANDS | ADMIN_COMMANDS
+    else:
+        allowed = PUBLIC_COMMANDS
+
+    if cmd not in allowed:
+        await event.respond("⚠️ Неизвестная команда. Напиши /help для списка команд.")
+        raise events.StopPropagation
 
 
 # ── Bot commands — public (any user) ──────────────────────────
@@ -576,7 +608,7 @@ async def main():
     bot_me = await bot.get_me()
     log.info("Бот подключён: @%s", bot_me.username)
 
-    # Register bot commands for Telegram UI hints
+    # Register bot commands — public (for all users)
     await bot(SetBotCommandsRequest(
         scope=BotCommandScopeDefault(),
         lang_code="",
@@ -587,7 +619,29 @@ async def main():
             BotCommand(command="add_keyword", description="Добавить ключевое слово"),
             BotCommand(command="remove_keyword", description="Удалить ключевое слово"),
             BotCommand(command="suggest_channel", description="Предложить канал"),
+            BotCommand(command="more", description="Ещё пропущенные вакансии"),
             BotCommand(command="status", description="Мой статус"),
+        ],
+    ))
+
+    # Register admin commands (visible only to admin)
+    admin_entity = await bot.get_input_entity(ADMIN_ID)
+    await bot(SetBotCommandsRequest(
+        scope=BotCommandScopePeer(peer=admin_entity),
+        lang_code="",
+        commands=[
+            BotCommand(command="start", description="Начать работу с ботом"),
+            BotCommand(command="help", description="Справка"),
+            BotCommand(command="keywords", description="Мои ключевые слова"),
+            BotCommand(command="add_keyword", description="Добавить ключевое слово"),
+            BotCommand(command="remove_keyword", description="Удалить ключевое слово"),
+            BotCommand(command="more", description="Ещё пропущенные вакансии"),
+            BotCommand(command="status", description="Мой статус"),
+            BotCommand(command="channels", description="[ADMIN] Список каналов"),
+            BotCommand(command="add_channel", description="[ADMIN] Добавить канал"),
+            BotCommand(command="remove_channel", description="[ADMIN] Удалить канал"),
+            BotCommand(command="users", description="[ADMIN] Список пользователей"),
+            BotCommand(command="suggestions", description="[ADMIN] Предложения каналов"),
         ],
     ))
     log.info("Команды бота зарегистрированы.")
